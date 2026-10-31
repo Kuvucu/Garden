@@ -1,0 +1,926 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>План благоустройства участка (в масштабе)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    body {
+      font-family: 'Inter', sans-serif;
+      background-color: #f1f5f9;
+      color: #1e293b;
+    }
+    .plan-container {
+      background: #ffffff;
+      box-shadow: 0 10px 30px -5px rgba(15, 23, 42, 0.12);
+    }
+    svg {
+      user-select: none;
+      -webkit-user-select: none;
+      touch-action: pan-x pan-y;
+    }
+    .draggable-item {
+      transition: filter 0.15s ease;
+    }
+    .draggable-item:hover {
+      filter: brightness(1.05) drop-shadow(0 4px 6px rgba(0,0,0,0.25));
+    }
+    .edit-mode .draggable-item {
+      cursor: move;
+    }
+    .dimension-label {
+      font-size: 11px;
+      font-weight: 600;
+      paint-order: stroke;
+      stroke: rgba(255, 255, 255, 0.9);
+      stroke-width: 3.5px;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+    .object-title {
+      paint-order: stroke;
+      stroke: rgba(255, 255, 255, 0.88);
+      stroke-width: 3.5px;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+  <!-- Шапка и панель управления -->
+  <header class="bg-white border-b border-slate-200 sticky top-0 z-30">
+    <div class="max-w-7xl mx-auto px-3 sm:px-6 py-3 flex flex-wrap items-center justify-between gap-3">
+      <div>
+        <h1 class="text-lg sm:text-xl font-bold text-slate-800 flex items-center gap-2">
+          <span class="inline-block w-3 h-3 rounded-full bg-emerald-600"></span>
+          Реалистичная схема участка (Масштаб 1:100)
+        </h1>
+        <p class="text-xs sm:text-sm text-slate-500">
+          Строго по вашему чертежу: 7 туй (Ø 1,5 м), 2 кольца БТ (Ø 1,5 м), можжевельник (Ø 3 м), яблони (Ø 6,8 м)
+        </p>
+      </div>
+
+      <!-- Кнопки управления видом -->
+      <div class="flex flex-wrap items-center gap-2">
+        <button id="btnTogglePaths" onclick="cyclePathsMode()" class="px-3 py-1.5 text-xs sm:text-sm font-medium rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 hover:bg-emerald-100 transition">
+          Дорожки: Вариант с изгибом (Фото 3)
+        </button>
+        <button id="btnToggleApples" onclick="toggleAppleMode()" class="px-3 py-1.5 text-xs sm:text-sm font-medium rounded-lg bg-slate-100 text-slate-700 border border-slate-200 hover:bg-slate-200 transition">
+          Яблони: Полный круг
+        </button>
+        <button id="btnToggleDims" onclick="toggleDimensions()" class="px-3 py-1.5 text-xs sm:text-sm font-medium rounded-lg bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 transition">
+          Размеры и оси: Вкл
+        </button>
+        <button id="btnToggleGrid" onclick="toggleGrid()" class="px-3 py-1.5 text-xs sm:text-sm font-medium rounded-lg bg-slate-100 text-slate-700 border border-slate-200 hover:bg-slate-200 transition">
+          Сетка 1×1 м: Вкл
+        </button>
+        <button id="btnToggleEdit" onclick="toggleEditMode()" class="px-3 py-1.5 text-xs sm:text-sm font-medium rounded-lg bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100 transition">
+          Двигать объекты: Выкл
+        </button>
+        <button onclick="exportPNG()" class="px-3 py-1.5 text-xs sm:text-sm font-semibold rounded-lg bg-slate-800 text-white hover:bg-slate-900 transition flex items-center gap-1.5 shadow-sm">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+          Скачать PNG
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Основная рабочая область -->
+  <main class="flex-1 max-w-7xl w-full mx-auto px-2 sm:px-6 py-4 grid grid-cols-1 lg:grid-cols-4 gap-5">
+    
+    <!-- Левая/Центральная колонка: Холст с планом -->
+    <div class="lg:col-span-3 flex flex-col gap-3">
+      <div class="plan-container rounded-2xl border border-slate-200 overflow-hidden p-2 sm:p-4 relative">
+        
+        <!-- Подсказка режима перетаскивания -->
+        <div id="editBanner" class="hidden mb-2 px-3 py-2 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-center justify-between">
+          <span><strong>Режим корректировки включён:</strong> вы можете перетаскивать любой элемент мышкой или пальцем.</span>
+          <button onclick="resetPositions()" class="px-2.5 py-1 bg-amber-200/70 hover:bg-amber-300 text-amber-950 font-semibold rounded-lg transition">Сбросить по чертежу</button>
+        </div>
+
+        <!-- SVG Схема (1 метр = 40 единиц SVG; поле 25.5 м × 22.0 м => 1020 × 880) -->
+        <div class="w-full overflow-x-auto flex justify-center">
+          <svg id="landscapeSvg" viewBox="0 0 1020 880" class="w-full max-w-[960px] h-auto rounded-xl border border-slate-300 shadow-inner bg-[#e8f0e2]">
+            <defs>
+              <!-- Текстура газона -->
+              <pattern id="grassPattern" width="40" height="40" patternUnits="userSpaceOnUse">
+                <rect width="40" height="40" fill="#e5efe0"/>
+                <path d="M 0 0 L 40 0 M 0 0 L 0 40" stroke="#cfdec8" stroke-width="1" fill="none"/>
+                <circle cx="12" cy="18" r="0.8" fill="#bdd2b3"/>
+                <circle cx="28" cy="9" r="0.8" fill="#bdd2b3"/>
+                <circle cx="31" cy="32" r="0.8" fill="#bdd2b3"/>
+                <circle cx="7" cy="34" r="0.8" fill="#bdd2b3"/>
+              </pattern>
+
+              <!-- Мелкая сетка 0.5 м и 1.0 м -->
+              <pattern id="meterGrid" width="40" height="40" patternUnits="userSpaceOnUse">
+                <path d="M 20 0 L 20 40 M 0 20 L 40 20" stroke="#94a3b8" stroke-width="0.4" stroke-dasharray="2,2" opacity="0.45"/>
+                <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#64748b" stroke-width="0.85" opacity="0.45"/>
+              </pattern>
+
+              <!-- Текстура гравия/парковки под машину -->
+              <pattern id="gravelPattern" width="16" height="16" patternUnits="userSpaceOnUse">
+                <rect width="16" height="16" fill="#e2e8f0"/>
+                <circle cx="4" cy="4" r="1.2" fill="#94a3b8" opacity="0.6"/>
+                <circle cx="12" cy="7" r="1" fill="#64748b" opacity="0.5"/>
+                <circle cx="7" cy="13" r="1.3" fill="#cbd5e1" opacity="0.9"/>
+                <circle cx="14" cy="14" r="0.9" fill="#94a3b8" opacity="0.6"/>
+              </pattern>
+
+              <!-- Текстура брусчатки для дорожек -->
+              <pattern id="pathPattern" width="12" height="12" patternUnits="userSpaceOnUse">
+                <rect width="12" height="12" fill="#dfd8cc"/>
+                <path d="M 0 6 L 12 6 M 6 0 L 6 6 M 0 12 L 12 12 M 12 6 L 12 12" stroke="#c2b8a3" stroke-width="0.9"/>
+              </pattern>
+
+              <!-- Текстура поликарбоната теплицы -->
+              <pattern id="greenhousePattern" width="12" height="20" patternUnits="userSpaceOnUse">
+                <rect width="12" height="20" fill="#d8f3dc" fill-opacity="0.88"/>
+                <line x1="0" y1="0" x2="0" y2="20" stroke="#74c69d" stroke-width="1.5"/>
+                <line x1="6" y1="0" x2="6" y2="20" stroke="#b7e4c7" stroke-width="0.8"/>
+              </pattern>
+
+              <!-- Текстура дерева для сруба и досок -->
+              <linearGradient id="woodLogGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+                <stop offset="0%" stop-color="#b07d4f"/>
+                <stop offset="50%" stop-color="#c89666"/>
+                <stop offset="100%" stop-color="#9c6b3f"/>
+              </linearGradient>
+
+              <linearGradient id="roofGarageGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" stop-color="#64748b"/>
+                <stop offset="50%" stop-color="#94a3b8"/>
+                <stop offset="100%" stop-color="#475569"/>
+              </linearGradient>
+
+              <!-- Градиент для кроны туи -->
+              <radialGradient id="thujaGrad" cx="38%" cy="35%" r="65%">
+                <stop offset="0%" stop-color="#40916c"/>
+                <stop offset="70%" stop-color="#2d6a4f"/>
+                <stop offset="100%" stop-color="#1b4332"/>
+              </radialGradient>
+
+              <!-- Градиент для большого можжевельника -->
+              <radialGradient id="juniperGrad" cx="38%" cy="35%" r="65%">
+                <stop offset="0%" stop-color="#52b788"/>
+                <stop offset="60%" stop-color="#2d6a4f"/>
+                <stop offset="100%" stop-color="#1b4332"/>
+              </radialGradient>
+
+              <!-- Градиент для яблонь -->
+              <radialGradient id="appleGrad" cx="40%" cy="38%" r="62%">
+                <stop offset="0%" stop-color="#a3e635" stop-opacity="0.85"/>
+                <stop offset="65%" stop-color="#65a30d" stop-opacity="0.85"/>
+                <stop offset="100%" stop-color="#3f6212" stop-opacity="0.9"/>
+              </radialGradient>
+
+              <!-- Тень под объектами -->
+              <filter id="dropShadow" x="-15%" y="-15%" width="135%" height="135%">
+                <feDropShadow dx="3" dy="4" stdDeviation="3.5" flood-color="#0f172a" flood-opacity="0.22"/>
+              </filter>
+              
+              <!-- Мягкая тень под деревьями -->
+              <filter id="treeShadow" x="-20%" y="-20%" width="145%" height="145%">
+                <feDropShadow dx="4" dy="5" stdDeviation="4.5" flood-color="#14532d" flood-opacity="0.28"/>
+              </filter>
+
+              <!-- Стрелки для размерных линий -->
+              <marker id="arrowStart" viewBox="0 0 10 10" refX="3" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+                <path d="M 10 1 L 2 5 L 10 9 z" fill="#1d4ed8"/>
+              </marker>
+              <marker id="arrowEnd" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+                <path d="M 0 1 L 8 5 L 0 9 z" fill="#1d4ed8"/>
+              </marker>
+            </defs>
+
+            <!-- 1. ФОН И СЕТКА -->
+            <rect width="1020" height="880" fill="url(#grassPattern)"/>
+            <g id="gridLayer">
+              <rect width="1020" height="880" fill="url(#meterGrid)"/>
+              <!-- Координатная линейка в метрах сверху и слева -->
+              <g id="rulerMarks" fill="#64748b" font-size="10" font-weight="500"></g>
+            </g>
+
+            <!-- 2. ГРАНИЦЫ УЧАСТКА (вверху и справа, как на рисунке) -->
+            <g id="boundaryLayer" stroke="#334155" stroke-width="4" fill="none" stroke-linecap="round" stroke-linejoin="round">
+              <!-- Верхняя линия забора и выступ у гаража, плюс правая граница -->
+              <path d="M 50 40 L 780 40 L 780 60 M 900 60 L 900 40 L 980 40 L 980 820" />
+            </g>
+
+            <!-- 3. ДОРОЖКИ (переключаемые: Фото 3 с изгибом / Фото 2 прямые / Выкл) -->
+            <g id="pathsLayer">
+              <!-- Вариант 1: Как на Фото 3 (огибает туи у бетонных колец справа и снизу, не задевая их, и идет вниз между 3 туями и качелями) -->
+              <g id="pathVariant3">
+                <!-- Центральная дорожка с плавным изгибом вокруг группы туй и колец БТ -->
+                <path d="M 538 42 C 538 128, 498 205, 352 232 L 352 720" 
+                      stroke="url(#pathPattern)" stroke-width="28" fill="none" stroke-linecap="butt" stroke-linejoin="round"/>
+                <path d="M 524 42 C 524 120, 486 192, 338 220 L 338 720" 
+                      stroke="#78716c" stroke-width="2" fill="none"/>
+                <path d="M 552 42 C 552 136, 510 216, 366 244 L 366 720" 
+                      stroke="#78716c" stroke-width="2" fill="none"/>
+
+                <!-- Вторая вертикальная дорожка справа от беседки и можжевельника (от угла парковки вниз) -->
+                <path d="M 592 315 L 592 730" stroke="url(#pathPattern)" stroke-width="26" fill="none"/>
+                <line x1="579" y1="315" x2="579" y2="730" stroke="#78716c" stroke-width="2"/>
+                <line x1="605" y1="315" x2="605" y2="730" stroke="#78716c" stroke-width="2"/>
+              </g>
+
+              <!-- Вариант 2: Как на Фото 2 (горизонтальная дорожка под досками + вертикальные проходы) -->
+              <g id="pathVariant2" class="hidden">
+                <!-- Горизонтальная дорожка под досками -->
+                <path d="M 90 218 L 352 218" stroke="url(#pathPattern)" stroke-width="26" fill="none"/>
+                <line x1="90" y1="205" x2="338" y2="205" stroke="#78716c" stroke-width="2"/>
+                <line x1="90" y1="231" x2="338" y2="231" stroke="#78716c" stroke-width="2"/>
+                <!-- Вертикальная дорожка по центру -->
+                <path d="M 352 205 L 352 740" stroke="url(#pathPattern)" stroke-width="28" fill="none"/>
+                <line x1="338" y1="205" x2="338" y2="740" stroke="#78716c" stroke-width="2"/>
+                <line x1="366" y1="205" x2="366" y2="740" stroke="#78716c" stroke-width="2"/>
+                <!-- Вертикальная линия справа от беседки -->
+                <path d="M 592 315 L 592 740" stroke="url(#pathPattern)" stroke-width="24" fill="none"/>
+                <line x1="580" y1="315" x2="580" y2="740" stroke="#78716c" stroke-width="2"/>
+                <line x1="604" y1="315" x2="604" y2="740" stroke="#78716c" stroke-width="2"/>
+              </g>
+            </g>
+
+            <!-- 4. ОСНОВНЫЕ ОБЪЕКТЫ И РАСТЕНИЯ (1 м = 40px) -->
+            <g id="objectsLayer">
+
+              <!-- ДОСКИ (вверху слева, как на Фото 2: ~5.2 м × 3.0 м) -->
+              <g class="draggable-item" data-id="boards" transform="translate(80, 48)" filter="url(#dropShadow)">
+                <rect x="0" y="0" width="210" height="120" rx="4" fill="#d4a373" stroke="#7f4f24" stroke-width="2.5"/>
+                <!-- Текстура уложенных досок -->
+                <line x1="8" y1="20" x2="202" y2="20" stroke="#9c6644" stroke-width="1.5"/>
+                <line x1="8" y1="40" x2="202" y2="40" stroke="#9c6644" stroke-width="1.5"/>
+                <line x1="8" y1="60" x2="202" y2="60" stroke="#9c6644" stroke-width="1.5"/>
+                <line x1="8" y1="80" x2="202" y2="80" stroke="#9c6644" stroke-width="1.5"/>
+                <line x1="8" y1="100" x2="202" y2="100" stroke="#9c6644" stroke-width="1.5"/>
+                <!-- Поперечные прокладки -->
+                <rect x="35" y="4" width="6" height="112" fill="#7f4f24" opacity="0.45"/>
+                <rect x="102" y="4" width="6" height="112" fill="#7f4f24" opacity="0.45"/>
+                <rect x="168" y="4" width="6" height="112" fill="#7f4f24" opacity="0.45"/>
+                <text x="105" y="64" text-anchor="middle" class="object-title" fill="#432818" font-size="14" font-weight="700">ДОСКИ</text>
+                <text x="105" y="82" text-anchor="middle" class="object-title" fill="#582f0e" font-size="11" font-weight="600">~5,2 × 3,0 м</text>
+              </g>
+
+              <!-- МЕСТО ПОД МАШИНУ (огорожено пунктиром, слева от гаража: 5.25 м × 6.0 м) -->
+              <g class="draggable-item" data-id="carspot" transform="translate(570, 60)">
+                <!-- Площадка -->
+                <rect x="0" y="0" width="210" height="240" rx="6" fill="url(#gravelPattern)"/>
+                <!-- Ограждение по левому и нижнему краю (как пунктир/линия на чертеже) -->
+                <path d="M 0 10 L 0 240 L 210 240" fill="none" stroke="#334155" stroke-width="3.5" stroke-dasharray="12,8"/>
+                
+                <!-- Реалистичный силуэт легкового автомобиля (расположен ВЕРТИКАЛЬНО, размер сохранен: 1.8 м × 3.85 м = 72px × 154px) -->
+                <g transform="translate(69, 58)" filter="url(#dropShadow)">
+                  <!-- Колеса (слева и справа) -->
+                  <rect x="-4" y="18" width="8" height="26" rx="3" fill="#1e293b"/>
+                  <rect x="-4" y="110" width="8" height="26" rx="3" fill="#1e293b"/>
+                  <rect x="68" y="18" width="8" height="26" rx="3" fill="#1e293b"/>
+                  <rect x="68" y="110" width="8" height="26" rx="3" fill="#1e293b"/>
+                  <!-- Кузов авто (72px × 154px = 1.8 м × 3.85 м) -->
+                  <rect x="0" y="0" width="72" height="154" rx="18" fill="#3b82f6" stroke="#1d4ed8" stroke-width="2"/>
+                  <!-- Остекление и крыша -->
+                  <path d="M 10 34 L 10 118 L 16 130 L 56 130 L 62 118 L 62 34 L 54 24 L 18 24 Z" fill="#1e293b" opacity="0.85"/>
+                  <rect x="13" y="44" width="46" height="58" rx="6" fill="#60a5fa" stroke="#2563eb" stroke-width="1.5"/>
+                  <!-- Передние фары (сверху) и задние фонари (снизу) -->
+                  <ellipse cx="14" cy="4" rx="6" ry="3" fill="#fef08a"/>
+                  <ellipse cx="58" cy="4" rx="6" ry="3" fill="#fef08a"/>
+                  <ellipse cx="14" cy="151" rx="6" ry="2.5" fill="#ef4444"/>
+                  <ellipse cx="58" cy="151" rx="6" ry="2.5" fill="#ef4444"/>
+                </g>
+                <text x="105" y="28" text-anchor="middle" class="object-title" fill="#1e293b" font-size="13" font-weight="700">МЕСТО ПОД МАШИНУ</text>
+                <text x="105" y="44" text-anchor="middle" class="object-title" fill="#475569" font-size="11" font-weight="600">(огорожено)</text>
+              </g>
+
+              <!-- ГАРАЖ (справа вверху: длина снизу вверх 6.0 м = 240px, ширина 4.5 м = 180px) -->
+              <g class="draggable-item" data-id="garage" transform="translate(780, 60)" filter="url(#dropShadow)">
+                <rect x="0" y="0" width="180" height="240" rx="3" fill="url(#roofGarageGrad)" stroke="#1e293b" stroke-width="3"/>
+                <!-- Ребра профнастила кровли и конёк -->
+                <line x1="90" y1="0" x2="90" y2="240" stroke="#1e293b" stroke-width="2.5"/>
+                <g stroke="#cbd5e1" stroke-width="1" opacity="0.45">
+                  <line x1="4" y1="30" x2="176" y2="30"/>
+                  <line x1="4" y1="60" x2="176" y2="60"/>
+                  <line x1="4" y1="90" x2="176" y2="90"/>
+                  <line x1="4" y1="120" x2="176" y2="120"/>
+                  <line x1="4" y1="150" x2="176" y2="150"/>
+                  <line x1="4" y1="180" x2="176" y2="180"/>
+                  <line x1="4" y1="210" x2="176" y2="210"/>
+                </g>
+                <text x="90" y="115" text-anchor="middle" class="object-title" fill="#0f172a" font-size="16" font-weight="700">ГАРАЖ</text>
+                <text x="90" y="135" text-anchor="middle" class="object-title" fill="#1e293b" font-size="12" font-weight="600">длина 6,0 м</text>
+              </g>
+
+              <!-- ДОМ ИЗ СРУБА (справа внизу под гаражом: длина снизу вверх 9.0 м = 360px, ширина 4.8 м = 192px) -->
+              <g class="draggable-item" data-id="house" transform="translate(768, 390)" filter="url(#dropShadow)">
+                <!-- Выпуски брёвен сруба (перерубы по углам) -->
+                <g fill="#8c5a32" stroke="#5c3818" stroke-width="1.5">
+                  <!-- Левый верхний узел -->
+                  <rect x="-10" y="8" width="212" height="10" rx="5"/>
+                  <rect x="8" y="-10" width="10" height="380" rx="5"/>
+                  <!-- Правый верхний и нижний узлы -->
+                  <rect x="174" y="-10" width="10" height="380" rx="5"/>
+                  <rect x="-10" y="342" width="212" height="10" rx="5"/>
+                  <!-- Средние перерубы сруба -->
+                  <rect x="-8" y="120" width="208" height="9" rx="4"/>
+                  <rect x="-8" y="240" width="208" height="9" rx="4"/>
+                </g>
+                <!-- Основной сруб и деревянная двускатная крыша -->
+                <rect x="0" y="0" width="192" height="360" rx="4" fill="url(#woodLogGrad)" stroke="#5c3818" stroke-width="3"/>
+                <!-- Текстура венцов/брёвен крыши -->
+                <g stroke="#7f4f24" stroke-width="1.2" opacity="0.55">
+                  <line x1="4" y1="30" x2="188" y2="30"/>
+                  <line x1="4" y1="60" x2="188" y2="60"/>
+                  <line x1="4" y1="90" x2="188" y2="90"/>
+                  <line x1="4" y1="150" x2="188" y2="150"/>
+                  <line x1="4" y1="180" x2="188" y2="180"/>
+                  <line x1="4" y1="210" x2="188" y2="210"/>
+                  <line x1="4" y1="270" x2="188" y2="270"/>
+                  <line x1="4" y1="300" x2="188" y2="300"/>
+                  <line x1="4" y1="330" x2="188" y2="330"/>
+                </g>
+                <!-- Конёк крыши дома -->
+                <line x1="96" y1="0" x2="96" y2="360" stroke="#432818" stroke-width="3.5"/>
+                <text x="96" y="172" text-anchor="middle" class="object-title" fill="#2b1700" font-size="18" font-weight="700">ДОМ (сруб)</text>
+                <text x="96" y="194" text-anchor="middle" class="object-title" fill="#432818" font-size="12" font-weight="700">длина 9,0 м</text>
+              </g>
+
+              <!-- 2 БЕТОННЫХ КОЛЬЦА "БТ" (строго в размер: Ø 1.5 м = 60px, радиус 30px) -->
+              <!-- Нижнее-левое кольцо БТ -->
+              <g class="draggable-item" data-id="bt1" transform="translate(375, 126)" filter="url(#dropShadow)">
+                <circle cx="0" cy="0" r="30" fill="#cbd5e1" stroke="#475569" stroke-width="2.5"/>
+                <circle cx="0" cy="0" r="22" fill="#94a3b8" stroke="#64748b" stroke-width="1.5" stroke-dasharray="5,3"/>
+                <circle cx="0" cy="0" r="12" fill="#64748b" stroke="#334155" stroke-width="1.5"/>
+                <text x="0" y="2" text-anchor="middle" class="object-title" fill="#0f172a" font-size="11" font-weight="700">БТ</text>
+                <text x="0" y="14" text-anchor="middle" class="object-title" fill="#1e293b" font-size="8.5" font-weight="700">Ø1,5м</text>
+              </g>
+              <!-- Верхнее-правое кольцо БТ -->
+              <g class="draggable-item" data-id="bt2" transform="translate(415, 74)" filter="url(#dropShadow)">
+                <circle cx="0" cy="0" r="30" fill="#cbd5e1" stroke="#475569" stroke-width="2.5"/>
+                <circle cx="0" cy="0" r="22" fill="#94a3b8" stroke="#64748b" stroke-width="1.5" stroke-dasharray="5,3"/>
+                <circle cx="0" cy="0" r="12" fill="#64748b" stroke="#334155" stroke-width="1.5"/>
+                <text x="0" y="2" text-anchor="middle" class="object-title" fill="#0f172a" font-size="11" font-weight="700">БТ</text>
+                <text x="0" y="14" text-anchor="middle" class="object-title" fill="#1e293b" font-size="8.5" font-weight="700">Ø1,5м</text>
+              </g>
+
+              <!-- 4 ТУИ ВОКРУГ БЕТОННЫХ КОЛЕЦ (строго в размер Ø 1.5 м = 60px, радиус 30px; отделяют кольца БТ от дорожки и не стоят на дорожке) -->
+              <!-- Туя 1: слева вверху от колец БТ -->
+              <g class="draggable-item thuja-node" data-id="thuja_top_1" transform="translate(312, 82)" filter="url(#treeShadow)">
+                <circle cx="0" cy="0" r="30" fill="none" stroke="#15803d" stroke-width="1" stroke-dasharray="3,3" opacity="0.7"/>
+                <path class="thuja-crown" fill="url(#thujaGrad)" stroke="#14532d" stroke-width="2"/>
+                <circle cx="0" cy="0" r="3.5" fill="#14532d"/>
+                <text x="0" y="16" text-anchor="middle" class="object-title" fill="#064e3b" font-size="9.5" font-weight="700">Ø 1,5м</text>
+              </g>
+              <!-- Туя 2: справа от верхнего кольца БТ (между кольцом и началом дорожки) -->
+              <g class="draggable-item thuja-node" data-id="thuja_top_2" transform="translate(480, 76)" filter="url(#treeShadow)">
+                <circle cx="0" cy="0" r="30" fill="none" stroke="#15803d" stroke-width="1" stroke-dasharray="3,3" opacity="0.7"/>
+                <path class="thuja-crown" fill="url(#thujaGrad)" stroke="#14532d" stroke-width="2"/>
+                <circle cx="0" cy="0" r="3.5" fill="#14532d"/>
+                <text x="0" y="16" text-anchor="middle" class="object-title" fill="#064e3b" font-size="9.5" font-weight="700">Ø 1,5м</text>
+              </g>
+              <!-- Туя 3: под верхним кольцом / правее нижнего кольца (между кольцами БТ и изгибом дорожки) -->
+              <g class="draggable-item thuja-node" data-id="thuja_top_3" transform="translate(442, 140)" filter="url(#treeShadow)">
+                <circle cx="0" cy="0" r="30" fill="none" stroke="#15803d" stroke-width="1" stroke-dasharray="3,3" opacity="0.7"/>
+                <path class="thuja-crown" fill="url(#thujaGrad)" stroke="#14532d" stroke-width="2"/>
+                <circle cx="0" cy="0" r="3.5" fill="#14532d"/>
+                <text x="0" y="16" text-anchor="middle" class="object-title" fill="#064e3b" font-size="9.5" font-weight="700">Ø 1,5м</text>
+              </g>
+              <!-- Туя 4: строго под нижним кольцом БТ (отделяет кольцо БТ от поворота дорожки) -->
+              <g class="draggable-item thuja-node" data-id="thuja_top_4" transform="translate(336, 184)" filter="url(#treeShadow)">
+                <circle cx="0" cy="0" r="30" fill="none" stroke="#15803d" stroke-width="1" stroke-dasharray="3,3" opacity="0.7"/>
+                <path class="thuja-crown" fill="url(#thujaGrad)" stroke="#14532d" stroke-width="2"/>
+                <circle cx="0" cy="0" r="3.5" fill="#14532d"/>
+                <text x="0" y="16" text-anchor="middle" class="object-title" fill="#064e3b" font-size="9.5" font-weight="700">Ø 1,5м</text>
+              </g>
+
+              <!-- 3 ТУИ В РЯД ВНИЗ К ТЕПЛИЦЕ (строго в размер Ø 1.5 м = 60px, правый край по линии X = 330px = правая граница теплицы!) -->
+              <!-- Центр X = 300px, радиус = 30px => правый край кроны ровно X = 330px, левее дорожки -->
+              <g class="draggable-item thuja-node" data-id="thuja_row_1" transform="translate(300, 256)" filter="url(#treeShadow)">
+                <circle cx="0" cy="0" r="30" fill="none" stroke="#15803d" stroke-width="1" stroke-dasharray="3,3" opacity="0.7"/>
+                <path class="thuja-crown" fill="url(#thujaGrad)" stroke="#14532d" stroke-width="2"/>
+                <circle cx="0" cy="0" r="3.5" fill="#14532d"/>
+                <text x="0" y="16" text-anchor="middle" class="object-title" fill="#064e3b" font-size="9.5" font-weight="700">Ø 1,5м</text>
+              </g>
+              <g class="draggable-item thuja-node" data-id="thuja_row_2" transform="translate(300, 320)" filter="url(#treeShadow)">
+                <circle cx="0" cy="0" r="30" fill="none" stroke="#15803d" stroke-width="1" stroke-dasharray="3,3" opacity="0.7"/>
+                <path class="thuja-crown" fill="url(#thujaGrad)" stroke="#14532d" stroke-width="2"/>
+                <circle cx="0" cy="0" r="3.5" fill="#14532d"/>
+                <text x="0" y="16" text-anchor="middle" class="object-title" fill="#064e3b" font-size="9.5" font-weight="700">Ø 1,5м</text>
+              </g>
+              <g class="draggable-item thuja-node" data-id="thuja_row_3" transform="translate(300, 384)" filter="url(#treeShadow)">
+                <circle cx="0" cy="0" r="30" fill="none" stroke="#15803d" stroke-width="1" stroke-dasharray="3,3" opacity="0.7"/>
+                <path class="thuja-crown" fill="url(#thujaGrad)" stroke="#14532d" stroke-width="2"/>
+                <circle cx="0" cy="0" r="3.5" fill="#14532d"/>
+                <text x="0" y="16" text-anchor="middle" class="object-title" fill="#064e3b" font-size="9.5" font-weight="700">Ø 1,5м</text>
+              </g>
+
+              <!-- КАЧЕЛИ ("КАЧ": 1.5 м × 2.5 м => 60px × 100px, справа от дорожки и ряда из 3 туй) -->
+              <g class="draggable-item" data-id="swings" transform="translate(376, 240)" filter="url(#dropShadow)">
+                <rect x="0" y="0" width="60" height="100" rx="5" fill="#fef3c7" stroke="#b45309" stroke-width="2.5"/>
+                <!-- Сиденье и тент садовых качелей -->
+                <rect x="10" y="12" width="40" height="76" rx="3" fill="#fde68a" stroke="#d97706" stroke-width="1.5"/>
+                <line x1="30" y1="4" x2="30" y2="96" stroke="#92400e" stroke-width="2"/>
+                <line x1="6" y1="8" x2="54" y2="8" stroke="#78350f" stroke-width="2.5"/>
+                <line x1="6" y1="92" x2="54" y2="92" stroke="#78350f" stroke-width="2.5"/>
+                <text x="30" y="48" text-anchor="middle" class="object-title" fill="#78350f" font-size="12" font-weight="700">КАЧ.</text>
+                <text x="30" y="63" text-anchor="middle" class="object-title" fill="#92400e" font-size="10" font-weight="600">1,5×2,5м</text>
+              </g>
+
+              <!-- БОЛЬШОЙ МОЖЖЕВЕЛЬНИК В ЦЕНТРЕ (Ø 3.0 м = 120px, радиус 60px, над беседкой) -->
+              <g class="draggable-item" data-id="juniper" transform="translate(495, 376)" filter="url(#treeShadow)">
+                <path id="juniperCrown" fill="url(#juniperGrad)" stroke="#14532d" stroke-width="2.5"/>
+                <!-- Внутренний рельеф хвои -->
+                <circle cx="0" cy="0" r="34" fill="none" stroke="#74c69d" stroke-width="1.5" stroke-dasharray="6,4" opacity="0.6"/>
+                <circle cx="0" cy="0" r="5" fill="#064e3b"/>
+                <text x="0" y="-4" text-anchor="middle" class="object-title" fill="#064e3b" font-size="12" font-weight="700">МОЖЖЕВЕЛЬНИК</text>
+                <text x="0" y="13" text-anchor="middle" class="object-title" fill="#14532d" font-size="11" font-weight="700">Ø 3,0 м</text>
+              </g>
+
+              <!-- ТЕПЛИЦА (6.0 м × 2.0 м => 240px × 80px; правая граница строго X = 330px на одной линии с 3 туями!) -->
+              <g class="draggable-item" data-id="greenhouse" transform="translate(90, 445)" filter="url(#dropShadow)">
+                <rect x="0" y="0" width="240" height="80" rx="6" fill="url(#greenhousePattern)" stroke="#15803d" stroke-width="2.8"/>
+                <!-- Дуги каркаса теплицы через каждый метр (40px) -->
+                <line x1="40" y1="0" x2="40" y2="80" stroke="#166534" stroke-width="1.5" opacity="0.65"/>
+                <line x1="80" y1="0" x2="80" y2="80" stroke="#166534" stroke-width="1.5" opacity="0.65"/>
+                <line x1="120" y1="0" x2="120" y2="80" stroke="#166534" stroke-width="1.5" opacity="0.65"/>
+                <line x1="160" y1="0" x2="160" y2="80" stroke="#166534" stroke-width="1.5" opacity="0.65"/>
+                <line x1="200" y1="0" x2="200" y2="80" stroke="#166534" stroke-width="1.5" opacity="0.65"/>
+                <line x1="0" y1="40" x2="240" y2="40" stroke="#15803d" stroke-width="1.5"/>
+                <text x="120" y="37" text-anchor="middle" class="object-title" fill="#064e3b" font-size="15" font-weight="700">ТЕПЛИЦА</text>
+                <text x="120" y="55" text-anchor="middle" class="object-title" fill="#166534" font-size="12" font-weight="600">6,0 × 2,0 м</text>
+              </g>
+
+              <!-- БЕСЕДКА (5.0 м × 3.0 м => 200px × 120px, под можжевельником и над правой яблоней) -->
+              <g class="draggable-item" data-id="gazebo" transform="translate(376, 445)" filter="url(#dropShadow)">
+                <rect x="0" y="0" width="200" height="120" rx="6" fill="#e6ccb2" stroke="#7f4f24" stroke-width="3"/>
+                <!-- Вальмовая (четырехскатная) крыша беседки -->
+                <line x1="0" y1="0" x2="45" y2="60" stroke="#7f4f24" stroke-width="2"/>
+                <line x1="0" y1="120" x2="45" y2="60" stroke="#7f4f24" stroke-width="2"/>
+                <line x1="200" y1="0" x2="155" y2="60" stroke="#7f4f24" stroke-width="2"/>
+                <line x1="200" y1="120" x2="155" y2="60" stroke="#7f4f24" stroke-width="2"/>
+                <line x1="45" y1="60" x2="155" y2="60" stroke="#582f0e" stroke-width="3"/>
+                <!-- Угловые столбы -->
+                <rect x="4" y="4" width="8" height="8" fill="#582f0e"/>
+                <rect x="188" y="4" width="8" height="8" fill="#582f0e"/>
+                <rect x="4" y="108" width="8" height="8" fill="#582f0e"/>
+                <rect x="188" y="108" width="8" height="8" fill="#582f0e"/>
+                <text x="100" y="55" text-anchor="middle" class="object-title" fill="#432818" font-size="16" font-weight="700">БЕСЕДКА</text>
+                <text x="100" y="75" text-anchor="middle" class="object-title" fill="#582f0e" font-size="12" font-weight="700">5,0 × 3,0 м</text>
+              </g>
+
+              <!-- 2 ЯБЛОНИ ВНИЗУ (Правая Ø 6.8 м = 272px, радиус 136px; Левая Ø 6.5 м = 260px, радиус 130px) -->
+              <!-- Левая нижняя яблоня (под теплицей) -->
+              <g class="draggable-item" data-id="apple_left" transform="translate(205, 716)" filter="url(#treeShadow)">
+                <!-- Режим полного круга (как на Фото 1 и 3) -->
+                <g class="apple-full">
+                  <circle cx="0" cy="0" r="130" fill="url(#appleGrad)" stroke="#3f6212" stroke-width="2.5"/>
+                  <circle cx="0" cy="0" r="95" fill="none" stroke="#ecfccb" stroke-width="1.2" stroke-dasharray="8,6" opacity="0.55"/>
+                </g>
+                <!-- Режим полукруга у нижнего края (как на Фото 2) -->
+                <g class="apple-semi hidden">
+                  <path d="M -130 120 A 130 130 0 0 1 130 120 L -130 120 Z" fill="url(#appleGrad)" stroke="#3f6212" stroke-width="2.5"/>
+                </g>
+                <!-- Ствол в центре -->
+                <circle cx="0" cy="0" r="7" fill="#5c3818" stroke="#ffffff" stroke-width="1.5"/>
+                <text x="0" y="-16" text-anchor="middle" class="object-title" fill="#1a2e05" font-size="14" font-weight="700">ЯБЛОНЯ (левая)</text>
+                <text x="0" y="24" text-anchor="middle" class="object-title" fill="#365314" font-size="12" font-weight="700">крона ~6,5 м</text>
+              </g>
+
+              <!-- Правая нижняя яблоня (под беседкой: ровно Ø 6,8 м = 680 см) -->
+              <g class="draggable-item" data-id="apple_right" transform="translate(476, 716)" filter="url(#treeShadow)">
+                <!-- Режим полного круга -->
+                <g class="apple-full">
+                  <circle cx="0" cy="0" r="136" fill="url(#appleGrad)" stroke="#3f6212" stroke-width="2.5"/>
+                  <circle cx="0" cy="0" r="100" fill="none" stroke="#ecfccb" stroke-width="1.2" stroke-dasharray="8,6" opacity="0.55"/>
+                </g>
+                <!-- Режим полукруга -->
+                <g class="apple-semi hidden">
+                  <path d="M -136 120 A 136 136 0 0 1 136 120 L -136 120 Z" fill="url(#appleGrad)" stroke="#3f6212" stroke-width="2.5"/>
+                </g>
+                <!-- Ствол в центре -->
+                <circle cx="0" cy="0" r="7" fill="#5c3818" stroke="#ffffff" stroke-width="1.5"/>
+                <text x="0" y="-16" text-anchor="middle" class="object-title" fill="#1a2e05" font-size="14" font-weight="700">ЯБЛОНЯ (правая)</text>
+                <text x="0" y="24" text-anchor="middle" class="object-title" fill="#365314" font-size="12" font-weight="700">Ø 6,8 м (680 см)</text>
+              </g>
+
+            </g>
+
+            <!-- 5. СЛОЙ ОСЕЙ ВЫРАВНИВАНИЯ И РАЗМЕРНЫХ ЛИНИЙ -->
+            <g id="dimensionsLayer">
+              <!-- Ось 1: Линия выравнивания правой границы ТЕПЛИЦЫ и 3 ТУЙ (X = 330) -->
+              <line x1="330" y1="205" x2="330" y2="565" stroke="#dc2626" stroke-width="2" stroke-dasharray="7,5"/>
+              <rect x="148" y="405" width="176" height="22" rx="4" fill="#fef2f2" stroke="#ef4444" stroke-width="1"/>
+              <text x="236" y="420" text-anchor="middle" fill="#b91c1c" font-size="10.5" font-weight="700">Единая линия: 3 туи и теплица</text>
+
+              <!-- Ось 2: Выравнивание правого края беседки и левой границы парковки (X = 576) -->
+              <line x1="576" y1="290" x2="576" y2="600" stroke="#dc2626" stroke-width="1.5" stroke-dasharray="5,5" opacity="0.75"/>
+
+              <!-- Размер: Длина гаража 6,0 м -->
+              <g>
+                <line x1="968" y1="60" x2="968" y2="300" stroke="#1d4ed8" stroke-width="1.8" marker-start="url(#arrowStart)" marker-end="url(#arrowEnd)"/>
+                <text x="958" y="180" text-anchor="middle" transform="rotate(-90 958 180)" class="dimension-label" fill="#1d4ed8">6,0 м (гараж)</text>
+              </g>
+
+              <!-- Размер: Длина дома 9,0 м -->
+              <g>
+                <line x1="968" y1="390" x2="968" y2="750" stroke="#1d4ed8" stroke-width="1.8" marker-start="url(#arrowStart)" marker-end="url(#arrowEnd)"/>
+                <text x="958" y="570" text-anchor="middle" transform="rotate(-90 958 570)" class="dimension-label" fill="#1d4ed8">9,0 м (дом из сруба)</text>
+              </g>
+
+              <!-- Размер: Теплица 6,0 × 2,0 м -->
+              <g>
+                <line x1="90" y1="538" x2="330" y2="538" stroke="#1d4ed8" stroke-width="1.8" marker-start="url(#arrowStart)" marker-end="url(#arrowEnd)"/>
+                <text x="210" y="552" text-anchor="middle" class="dimension-label" fill="#1d4ed8">6,0 м</text>
+                <line x1="76" y1="445" x2="76" y2="525" stroke="#1d4ed8" stroke-width="1.8" marker-start="url(#arrowStart)" marker-end="url(#arrowEnd)"/>
+                <text x="65" y="485" text-anchor="middle" transform="rotate(-90 65 485)" class="dimension-label" fill="#1d4ed8">2,0 м</text>
+              </g>
+
+              <!-- Размер: Беседка 5,0 × 3,0 м -->
+              <g>
+                <line x1="376" y1="575" x2="576" y2="575" stroke="#1d4ed8" stroke-width="1.8" marker-start="url(#arrowStart)" marker-end="url(#arrowEnd)"/>
+                <text x="476" y="588" text-anchor="middle" class="dimension-label" fill="#1d4ed8">5,0 м</text>
+                <line x1="614" y1="445" x2="614" y2="565" stroke="#1d4ed8" stroke-width="1.8" marker-start="url(#arrowStart)" marker-end="url(#arrowEnd)"/>
+                <text x="628" y="505" text-anchor="middle" transform="rotate(-90 628 505)" class="dimension-label" fill="#1d4ed8">3,0 м</text>
+              </g>
+
+              <!-- Размер: Правая яблоня Ø 6,8 м (680 см) -->
+              <g>
+                <line x1="340" y1="716" x2="612" y2="716" stroke="#1d4ed8" stroke-width="1.8" stroke-dasharray="4,3" marker-start="url(#arrowStart)" marker-end="url(#arrowEnd)"/>
+                <text x="476" y="707" text-anchor="middle" class="dimension-label" fill="#1d4ed8">Ø 6,8 м (680 см)</text>
+              </g>
+
+              <!-- Размер: Можжевельник Ø 3,0 м -->
+              <g>
+                <line x1="435" y1="376" x2="555" y2="376" stroke="#1d4ed8" stroke-width="1.5" stroke-dasharray="3,2" marker-start="url(#arrowStart)" marker-end="url(#arrowEnd)"/>
+              </g>
+            </g>
+
+            <!-- 6. МАСШТАБНАЯ ЛИНЕЙКА ВНИЗУ СЛЕВА -->
+            <g transform="translate(24, 835)">
+              <rect x="0" y="0" width="235" height="34" rx="6" fill="#ffffff" fill-opacity="0.92" stroke="#cbd5e1" stroke-width="1.5"/>
+              <text x="12" y="14" fill="#334155" font-size="10" font-weight="700">МАСШТАБНАЯ ЛИНЕЙКА (1 клетка = 1 м):</text>
+              <g transform="translate(12, 20)">
+                <rect x="0" y="0" width="40" height="6" fill="#1e293b"/>
+                <rect x="40" y="0" width="40" height="6" fill="#cbd5e1" stroke="#1e293b" stroke-width="0.8"/>
+                <rect x="80" y="0" width="40" height="6" fill="#1e293b"/>
+                <rect x="120" y="0" width="40" height="6" fill="#cbd5e1" stroke="#1e293b" stroke-width="0.8"/>
+                <rect x="160" y="0" width="40" height="6" fill="#1e293b"/>
+                <text x="0" y="12" fill="#475569" font-size="8" font-weight="600">0</text>
+                <text x="38" y="12" fill="#475569" font-size="8" font-weight="600">1м</text>
+                <text x="78" y="12" fill="#475569" font-size="8" font-weight="600">2м</text>
+                <text x="118" y="12" fill="#475569" font-size="8" font-weight="600">3м</text>
+                <text x="158" y="12" fill="#475569" font-size="8" font-weight="600">4м</text>
+                <text x="195" y="12" fill="#475569" font-size="8" font-weight="600">5м</text>
+              </g>
+            </g>
+
+          </svg>
+        </div>
+      </div>
+    </div>
+
+    <!-- Правая колонка: Экспликация и точные размеры по вашему ТЗ -->
+    <div class="lg:col-span-1 flex flex-col gap-4">
+      <div class="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm">
+        <h2 class="text-base font-bold text-slate-800 mb-3 flex items-center gap-2">
+          <svg class="w-5 h-5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+          Экспликация и размеры
+        </h2>
+        <div class="space-y-2.5 text-xs sm:text-sm">
+          <div class="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80 flex justify-between items-center">
+            <div>
+              <div class="font-semibold text-slate-800">Дом (из сруба)</div>
+              <div class="text-xs text-slate-500">Справа внизу</div>
+            </div>
+            <span class="font-bold text-amber-900 bg-amber-100 px-2 py-0.5 rounded-md">длина 9,0 м</span>
+          </div>
+
+          <div class="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80 flex justify-between items-center">
+            <div>
+              <div class="font-semibold text-slate-800">Гараж</div>
+              <div class="text-xs text-slate-500">Справа вверху</div>
+            </div>
+            <span class="font-bold text-slate-700 bg-slate-200 px-2 py-0.5 rounded-md">длина 6,0 м</span>
+          </div>
+
+          <div class="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80 flex justify-between items-center">
+            <div>
+              <div class="font-semibold text-slate-800">Место под машину</div>
+              <div class="text-xs text-slate-500">Слева от гаража, огорожено</div>
+            </div>
+            <span class="font-bold text-blue-800 bg-blue-100 px-2 py-0.5 rounded-md">~5,2 × 6,0 м</span>
+          </div>
+
+          <div class="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80 flex justify-between items-center">
+            <div>
+              <div class="font-semibold text-slate-800">Беседка</div>
+              <div class="text-xs text-slate-500">Под можжевельником</div>
+            </div>
+            <span class="font-bold text-amber-800 bg-amber-100 px-2 py-0.5 rounded-md">5,0 × 3,0 м</span>
+          </div>
+
+          <div class="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80 flex justify-between items-center">
+            <div>
+              <div class="font-semibold text-slate-800">Теплица</div>
+              <div class="text-xs text-slate-500">По одной линии с 3 туями</div>
+            </div>
+            <span class="font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-md">6,0 × 2,0 м</span>
+          </div>
+
+          <div class="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80 flex justify-between items-center">
+            <div>
+              <div class="font-semibold text-slate-800">Качели («КАЧ»)</div>
+              <div class="text-xs text-slate-500">Справа от 3 туй</div>
+            </div>
+            <span class="font-bold text-amber-800 bg-amber-100 px-2 py-0.5 rounded-md">1,5 × 2,5 м</span>
+          </div>
+
+          <div class="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80 flex justify-between items-center">
+            <div>
+              <div class="font-semibold text-slate-800">Можжевельник (1 шт.)</div>
+              <div class="text-xs text-slate-500">По центру над беседкой</div>
+            </div>
+            <span class="font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-md">Ø 3,0 м</span>
+          </div>
+
+          <div class="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80 flex justify-between items-center">
+            <div>
+              <div class="font-semibold text-slate-800">Туи обычные (7 шт.)</div>
+              <div class="text-xs text-slate-500">4 вокруг колец + 3 вниз</div>
+            </div>
+            <span class="font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-md">Ø 1,5 м</span>
+          </div>
+
+          <div class="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80 flex justify-between items-center">
+            <div>
+              <div class="font-semibold text-slate-800">Бетонные кольца «БТ»</div>
+              <div class="text-xs text-slate-500">2 шт. сверху у досок</div>
+            </div>
+            <span class="font-bold text-slate-700 bg-slate-200 px-2 py-0.5 rounded-md">Ø 1,5 м</span>
+          </div>
+
+          <div class="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80 flex justify-between items-center">
+            <div>
+              <div class="font-semibold text-slate-800">Яблони (2 шт. внизу)</div>
+              <div class="text-xs text-slate-500">Под теплицей и беседкой</div>
+            </div>
+            <span class="font-bold text-lime-900 bg-lime-200 px-2 py-0.5 rounded-md">Ø 6,8 м</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Памятка о проверке пропорций -->
+      <div class="bg-emerald-900 text-emerald-50 rounded-2xl p-4 shadow-sm text-xs space-y-2 leading-relaxed">
+        <div class="font-bold text-sm text-white flex items-center gap-1.5">
+          <svg class="w-4 h-4 text-emerald-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+          Точное соответствие чертежу:
+        </div>
+        <ul class="list-disc list-inside space-y-1 text-emerald-100/90">
+          <li>Никаких лишних кустов или деревьев не добавлено (ровно 4 + 3 = 7 туй, 1 можжевельник и 2 яблони).</li>
+          <li>Правая граница теплицы и ряд из 3 туй стоят строго по одной вертикальной линии (выделена красным пунктиром).</li>
+          <li>Вы можете переключать вариант дорожек (с плавным изгибом как на Фото 3 или прямые как на Фото 2) кнопкой сверху.</li>
+        </ul>
+      </div>
+    </div>
+
+  </main>
+
+  <script>
+    // Генерация зубчатого контура хвойной кроны (как на вашем рисунке, но аккуратно и реалистично)
+    function createConiferPath(radius, pointsCount, innerDepth) {
+      let d = '';
+      const step = (Math.PI * 2) / pointsCount;
+      for (let i = 0; i < pointsCount; i++) {
+        const angleOuter = i * step;
+        const angleMid1 = angleOuter + step * 0.35;
+        const angleValley = angleOuter + step * 0.5;
+        const angleMid2 = angleOuter + step * 0.65;
+
+        const rOuter = radius;
+        const rInner = radius - innerDepth;
+
+        const x1 = (Math.cos(angleOuter) * rOuter).toFixed(1);
+        const y1 = (Math.sin(angleOuter) * rOuter).toFixed(1);
+        const x2 = (Math.cos(angleMid1) * (rOuter - innerDepth * 0.3)).toFixed(1);
+        const y2 = (Math.sin(angleMid1) * (rOuter - innerDepth * 0.3)).toFixed(1);
+        const x3 = (Math.cos(angleValley) * rInner).toFixed(1);
+        const y3 = (Math.sin(angleValley) * rInner).toFixed(1);
+        const x4 = (Math.cos(angleMid2) * (rOuter - innerDepth * 0.3)).toFixed(1);
+        const y4 = (Math.sin(angleMid2) * (rOuter - innerDepth * 0.3)).toFixed(1);
+
+        if (i === 0) {
+          d += `M ${x1} ${y1} `;
+        } else {
+          d += `L ${x1} ${y1} `;
+        }
+        d += `Q ${x2} ${y2}, ${x3} ${y3} Q ${x4} ${y4}, `;
+      }
+      d += 'Z';
+      return d;
+    }
+
+    // Отрисовка крон 7 туй (радиус 30px = диаметр 1.5м) и большого можжевельника (радиус 60px = диаметр 3.0м)
+    function initCrowns() {
+      const thujaPathData = createConiferPath(30, 12, 5.5);
+      document.querySelectorAll('.thuja-crown').forEach(el => {
+        el.setAttribute('d', thujaPathData);
+      });
+
+      const juniperPathData = createConiferPath(60, 16, 9);
+      const juniperEl = document.getElementById('juniperCrown');
+      if (juniperEl) {
+        juniperEl.setAttribute('d', juniperPathData);
+      }
+    }
+
+    // Отрисовка метровой разметки по краям сетки (1 м = 40px)
+    function initRulers() {
+      const rulerGroup = document.getElementById('rulerMarks');
+      let html = '';
+      for (let m = 1; m <= 25; m++) {
+        const x = m * 40;
+        html += `<text x="${x - 3}" y="14">${m}м</text>`;
+      }
+      for (let m = 1; m <= 21; m++) {
+        const y = m * 40;
+        html += `<text x="4" y="${y + 3}">${m}м</text>`;
+      }
+      rulerGroup.innerHTML = html;
+    }
+
+    // Состояния переключателей
+    let pathsMode = 0; // 0: Фото 3 (изгиб), 1: Фото 2 (прямые), 2: Скрыты
+    let appleSemiMode = false;
+    let dimsVisible = true;
+    let gridVisible = true;
+    let editMode = false;
+
+    // Сохранение исходных координат для сброса
+    const defaultTransforms = {};
+    document.querySelectorAll('.draggable-item').forEach(el => {
+      defaultTransforms[el.dataset.id] = el.getAttribute('transform');
+    });
+
+    function cyclePathsMode() {
+      pathsMode = (pathsMode + 1) % 3;
+      const v3 = document.getElementById('pathVariant3');
+      const v2 = document.getElementById('pathVariant2');
+      const btn = document.getElementById('btnTogglePaths');
+
+      if (pathsMode === 0) {
+        v3.classList.remove('hidden');
+        v2.classList.add('hidden');
+        btn.textContent = 'Дорожки: Вариант с изгибом (Фото 3)';
+      } else if (pathsMode === 1) {
+        v3.classList.add('hidden');
+        v2.classList.remove('hidden');
+        btn.textContent = 'Дорожки: Прямые линии (Фото 2)';
+      } else {
+        v3.classList.add('hidden');
+        v2.classList.add('hidden');
+        btn.textContent = 'Дорожки: Скрыты (Фото 1)';
+      }
+    }
+
+    function toggleAppleMode() {
+      appleSemiMode = !appleSemiMode;
+      document.querySelectorAll('.apple-full').forEach(el => el.classList.toggle('hidden', appleSemiMode));
+      document.querySelectorAll('.apple-semi').forEach(el => el.classList.toggle('hidden', !appleSemiMode));
+      document.getElementById('btnToggleApples').textContent = appleSemiMode
+        ? 'Яблони: Полукруги (Фото 2)'
+        : 'Яблони: Полный круг';
+    }
+
+    function toggleDimensions() {
+      dimsVisible = !dimsVisible;
+      document.getElementById('dimensionsLayer').classList.toggle('hidden', !dimsVisible);
+      const btn = document.getElementById('btnToggleDims');
+      btn.textContent = `Размеры и оси: ${dimsVisible ? 'Вкл' : 'Выкл'}`;
+    }
+
+    function toggleGrid() {
+      gridVisible = !gridVisible;
+      document.getElementById('gridLayer').classList.toggle('hidden', !gridVisible);
+      const btn = document.getElementById('btnToggleGrid');
+      btn.textContent = `Сетка 1×1 м: ${gridVisible ? 'Вкл' : 'Выкл'}`;
+    }
+
+    function toggleEditMode() {
+      editMode = !editMode;
+      const svg = document.getElementById('landscapeSvg');
+      const banner = document.getElementById('editBanner');
+      const btn = document.getElementById('btnToggleEdit');
+
+      svg.classList.toggle('edit-mode', editMode);
+      banner.classList.toggle('hidden', !editMode);
+      btn.textContent = `Двигать объекты: ${editMode ? 'Вкл' : 'Выкл'}`;
+      btn.className = editMode
+        ? 'px-3 py-1.5 text-xs sm:text-sm font-semibold rounded-lg bg-amber-500 text-white border border-amber-600 transition'
+        : 'px-3 py-1.5 text-xs sm:text-sm font-medium rounded-lg bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100 transition';
+    }
+
+    function resetPositions() {
+      document.querySelectorAll('.draggable-item').forEach(el => {
+        const id = el.dataset.id;
+        if (defaultTransforms[id]) {
+          el.setAttribute('transform', defaultTransforms[id]);
+        }
+      });
+    }
+
+    // Логика перетаскивания элементов в режиме редактирования
+    function initDragAndDrop() {
+      const svg = document.getElementById('landscapeSvg');
+      let selectedEl = null;
+      let startPoint = { x: 0, y: 0 };
+      let initialTranslate = { x: 0, y: 0 };
+
+      function getSvgPoint(evt) {
+        const pt = svg.createSVGPoint();
+        const clientX = evt.touches ? evt.touches[0].clientX : evt.clientX;
+        const clientY = evt.touches ? evt.touches[0].clientY : evt.clientY;
+        pt.x = clientX;
+        pt.y = clientY;
+        return pt.matrixTransform(svg.getScreenCTM().inverse());
+      }
+
+      function parseTranslate(transformStr) {
+        const match = /translate\(\s*([-\d.]+)\s*,\s*([-\d.]+)\s*\)/.exec(transformStr || '');
+        return match ? { x: parseFloat(match[1]), y: parseFloat(match[2]) } : { x: 0, y: 0 };
+      }
+
+      function onStart(evt) {
+        if (!editMode) return;
+        const target = evt.target.closest('.draggable-item');
+        if (!target) return;
+        evt.preventDefault();
+        selectedEl = target;
+        startPoint = getSvgPoint(evt);
+        initialTranslate = parseTranslate(selectedEl.getAttribute('transform'));
+      }
+
+      function onMove(evt) {
+        if (!selectedEl || !editMode) return;
+        evt.preventDefault();
+        const currentPoint = getSvgPoint(evt);
+        const dx = Math.round(currentPoint.x - startPoint.x);
+        const dy = Math.round(currentPoint.y - startPoint.y);
+        selectedEl.setAttribute('transform', `translate(${initialTranslate.x + dx}, ${initialTranslate.y + dy})`);
+      }
+
+      function onEnd() {
+        selectedEl = null;
+      }
+
+      svg.addEventListener('mousedown', onStart);
+      window.addEventListener('mousemove', onMove);
+      window.addEventListener('mouseup', onEnd);
+
+      svg.addEventListener('touchstart', onStart, { passive: false });
+      window.addEventListener('touchmove', onMove, { passive: false });
+      window.addEventListener('touchend', onEnd);
+    }
+
+    // Скачивание схемы в высоком разрешении (PNG)
+    function exportPNG() {
+      const svgElement = document.getElementById('landscapeSvg');
+      const serializer = new XMLSerializer();
+      let svgString = serializer.serializeToString(svgElement);
+
+      if (!svgString.match(/^<svg[^>]+xmlns="http\:\/\/www\.w3\.org\/2000\/svg"/)) {
+        svgString = svgString.replace(/^<svg/, '<svg xmlns="http://www.w3.org/2000/svg"');
+      }
+
+      const canvas = document.createElement('canvas');
+      const scale = 2; // 2x для четкости (2040 x 1760)
+      canvas.width = 1020 * scale;
+      canvas.height = 880 * scale;
+      const ctx = canvas.getContext('2d');
+
+      const img = new Image();
+      const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
+      const url = URL.createObjectURL(svgBlob);
+
+      img.onload = function () {
+        ctx.fillStyle = '#e5efe0';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        URL.revokeObjectURL(url);
+
+        const link = document.createElement('a');
+        link.download = 'plan-uchastka.png';
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+      };
+      img.src = url;
+    }
+
+    window.onload = function () {
+      initCrowns();
+      initRulers();
+      initDragAndDrop();
+    };
+  </script>
+</body>
+</html>
